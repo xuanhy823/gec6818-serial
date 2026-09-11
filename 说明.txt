@@ -1,0 +1,28 @@
+﻿GEC6818 串口传输 + 终端
+
+双击「打开串口传输.bat」。
+
+使用前：
+1. 先关掉 MobaXterm 里的串口标签（不必退出 MobaXterm）
+2. 选状态 OK 的 CH340（号会变，COM6/COM3 都出现过）
+3. 波特率下拉选择，开发板默认 115200，不要勾 DTR
+
+文件传输页：
+1. 选电脑上的程序，板上默认 /home/文件名
+2. 点开始传输，看进度条；成功要看到 size_ok、CP_OK、字节数一致和 elf_ok
+3. 再点「启动板上程序」。/home/demo 查的是进程名 demo
+
+串口终端页：
+1. 选好串口后点「连接」
+2. 鼠标点黑色窗口，直接打字（和 MobaXterm 一样，板子回显）
+3. Enter 执行；方向键走板上历史；Ctrl+C 中断（有选中文字时是复制）
+4. 右键：有选中则复制，否则粘贴
+5. 快捷按钮可一键发常用命令
+6. 终端与传输不能同时占用串口，用完后点「断开」
+
+命令行（给脚本/AI 用）：
+  board-cmd.ps1 "uname -n"
+  send-to-board.ps1 C:\path\vehicle_course -RemoteFile /home/demo -Run
+  gec-serial.ps1 -Action cmd -Command "ls -l /home"
+
+不要传到 U 盘。约 284KB 需要 30–80 秒。

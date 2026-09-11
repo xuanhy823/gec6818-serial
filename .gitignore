@@ -1,0 +1,3 @@
+*.bin
+.xfer_test.bin
+*.log
