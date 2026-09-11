@@ -10,9 +10,14 @@ $script:TermCurLine = ""
 $script:TermCurCol = 0
 $script:TermEsc = 0
 $script:TermCsi = ""
+$script:TermOscLen = 0
 $script:TermUtfNeed = 0
 $script:TermUtfAcc = New-Object System.Collections.Generic.List[byte]
 $script:TermDirty = $false
+$script:TermCols = 80
+$script:TermRows = 24
+$script:TermSelecting = $false
+$script:LastLaunch = $null
 
 $uiBg = $script:Ui.Bg
 $uiSurface = $script:Ui.Card
@@ -26,9 +31,10 @@ $uiSeg = $script:Ui.Seg
 $termGrid = New-Object System.Windows.Forms.TableLayoutPanel
 $termGrid.Dock = "Fill"
 $termGrid.ColumnCount = 1
-$termGrid.RowCount = 3
+$termGrid.RowCount = 4
 $termGrid.BackColor = $uiBg
 $termGrid.GrowStyle = "FixedSize"
+[void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 48)))
 [void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 48)))
 [void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
 [void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 68)))
@@ -39,14 +45,37 @@ $termBar.Dock = "Fill"
 $termBar.BackColor = $uiBg
 $termGrid.SetRow($termBar, 0)
 
+$termLaunch = New-Object System.Windows.Forms.Panel
+$termLaunch.Dock = "Fill"
+$termLaunch.BackColor = $uiBg
+$termGrid.Controls.Add($termLaunch)
+$termGrid.SetRow($termLaunch, 1)
+$lblLaunch = New-Object System.Windows.Forms.Label
+$lblLaunch.Text = "快捷启动"
+$lblLaunch.Location = New-Object System.Drawing.Point(4, 12)
+$lblLaunch.Size = New-Object System.Drawing.Size(72, 22)
+$lblLaunch.ForeColor = $uiMuted
+$lblLaunch.BackColor = [System.Drawing.Color]::Transparent
+$termLaunch.Controls.Add($lblLaunch)
+$fldLaunch = New-Field $termLaunch 80 6 420 36
+$txtLaunch = Add-Box $fldLaunch 0 0 100
+$txtLaunch.Dock = "Fill"
+if ($txtRemote -and $txtRemote.Text) { $txtLaunch.Text = $txtRemote.Text } else { $txtLaunch.Text = "/home/" }
+$btnTermLaunch = Add-Btn $termLaunch "启动" 508 6 88 36 $script:Ui.Ink ([System.Drawing.Color]::White)
+$termLaunch.Add_Resize({
+    $w = $termLaunch.ClientSize.Width
+    $fldLaunch.Width = [Math]::Max(160, $w - 180)
+    $btnTermLaunch.Left = $fldLaunch.Left + $fldLaunch.Width + 8
+})
+
 $termShell = New-Card $termGrid
 $termShell.Dock = "Fill"
 $termShell.BackColor = $script:Ui.TermBg
 $termShell.LineColor = $script:Ui.TermBg
 $termShell.CornerRadius = 12
-$termShell.Margin = New-Object System.Windows.Forms.Padding(0, 10, 0, 8)
+$termShell.Margin = New-Object System.Windows.Forms.Padding(0, 6, 0, 8)
 $termShell.Padding = New-Object System.Windows.Forms.Padding(12)
-$termGrid.SetRow($termShell, 1)
+$termGrid.SetRow($termShell, 2)
 
 $termQuick = New-Object System.Windows.Forms.FlowLayoutPanel
 $termQuick.Dock = "Fill"
@@ -54,12 +83,13 @@ $termQuick.BackColor = $uiBg
 $termQuick.WrapContents = $true
 $termQuick.Padding = New-Object System.Windows.Forms.Padding(0, 4, 0, 0)
 $termGrid.Controls.Add($termQuick)
-$termGrid.SetRow($termQuick, 2)
+$termGrid.SetRow($termQuick, 3)
 
 $txtTerm = New-Object System.Windows.Forms.TextBox
 $txtTerm.Multiline = $true
-$txtTerm.ScrollBars = "None"
-$txtTerm.WordWrap = $false
+$txtTerm.ScrollBars = "Both"
+$txtTerm.WordWrap = $true
+$txtTerm.ReadOnly = $true
 $txtTerm.Dock = "Fill"
 $txtTerm.BackColor = $script:Ui.TermBg
 $txtTerm.ForeColor = $script:Ui.TermFg
@@ -67,10 +97,16 @@ $txtTerm.Font = New-Object System.Drawing.Font("Consolas", 11)
 $txtTerm.BorderStyle = "None"
 $txtTerm.HideSelection = $false
 $txtTerm.ShortcutsEnabled = $false
-$txtTerm.MaxLength = 2000000
+$txtTerm.MaxLength = 4000000
 $txtTerm.AcceptsTab = $true
 $txtTerm.AcceptsReturn = $true
 $termShell.Controls.Add($txtTerm)
+$txtTerm.Add_PreviewKeyDown({
+    $n = [string]$_.KeyCode
+    if ($n -eq "Tab" -or $n -eq "Up" -or $n -eq "Down" -or $n -eq "Left" -or $n -eq "Right" -or $n -eq "Home" -or $n -eq "End" -or $n -eq "Prior" -or $n -eq "Next") {
+        $_.IsInputKey = $true
+    }
+})
 
 $lblQuick = New-Object System.Windows.Forms.Label
 $lblQuick.Text = "快捷命令"
@@ -92,12 +128,27 @@ foreach ($qc in $quickCmds) {
     })
 }
 
+function Get-TermSize {
+    $sz = [System.Windows.Forms.TextRenderer]::MeasureText("M", $txtTerm.Font)
+    $cw = [Math]::Max(6, $sz.Width)
+    $ch = [Math]::Max(10, $sz.Height)
+    $cols = [int]($txtTerm.ClientSize.Width / $cw)
+    $rows = [int]($txtTerm.ClientSize.Height / $ch)
+    if ($cols -lt 40) { $cols = 40 }
+    if ($cols -gt 132) { $cols = 132 }
+    if ($rows -lt 12) { $rows = 12 }
+    if ($rows -gt 60) { $rows = 60 }
+    $script:TermCols = $cols
+    $script:TermRows = $rows
+}
+
 function Reset-TerminalEmulator {
     $script:TermLines = New-Object System.Collections.Generic.List[string]
     $script:TermCurLine = ""
     $script:TermCurCol = 0
     $script:TermEsc = 0
     $script:TermCsi = ""
+    $script:TermOscLen = 0
     $script:TermUtfNeed = 0
     $script:TermUtfAcc.Clear()
     $script:TermDirty = $true
@@ -114,20 +165,29 @@ function Get-TermDisplayText {
     return $sb.ToString()
 }
 
+function Snap-TermCaret {
+    if ($script:TermSelecting) { return }
+    $txtTerm.SelectionLength = 0
+    $txtTerm.SelectionStart = $txtTerm.Text.Length
+    $txtTerm.ScrollToCaret()
+}
+
 function Sync-TerminalDisplay {
     if (-not $script:TermDirty) { return }
     $script:TermDirty = $false
-    if ($txtTerm.SelectionLength -gt 0) { return }
+    if ($script:TermSelecting -and $txtTerm.SelectionLength -gt 0) { return }
     $shown = Get-TermDisplayText
     $old = $txtTerm.Text
-    if ($shown -eq $old) { return }
+    if ($shown -eq $old) {
+        Snap-TermCaret
+        return
+    }
     if ($shown.StartsWith($old) -and $old.Length -gt 0) {
         $txtTerm.AppendText($shown.Substring($old.Length))
     } else {
         $txtTerm.Text = $shown
     }
-    $txtTerm.SelectionStart = $txtTerm.Text.Length
-    $txtTerm.ScrollToCaret()
+    Snap-TermCaret
 }
 
 function Term-TrimHistory {
@@ -148,6 +208,10 @@ function Term-WriteChar([char]$ch) {
         }
     }
     $script:TermCurCol++
+    if ($script:TermCols -gt 8 -and $script:TermCurCol -ge $script:TermCols) {
+        Term-CommitLine
+        return
+    }
     $script:TermDirty = $true
 }
 
@@ -200,6 +264,24 @@ function Apply-TermCsi([string]$seq) {
             if ($params -eq "2" -or $params -eq "3") { Reset-TerminalEmulator }
         }
         "K" { Term-EraseInLine $params }
+        "A" {
+            $n = 1
+            [void][int]::TryParse($params, [ref]$n)
+            if ($n -lt 1) { $n = 1 }
+            $keep = $script:TermCurCol
+            for ($i = 0; $i -lt $n -and $script:TermLines.Count -gt 0; $i++) {
+                $script:TermCurLine = $script:TermLines[$script:TermLines.Count - 1]
+                $script:TermLines.RemoveAt($script:TermLines.Count - 1)
+            }
+            $script:TermCurCol = [Math]::Min($keep, $script:TermCurLine.Length)
+            $script:TermDirty = $true
+        }
+        "B" {
+            $n = 1
+            [void][int]::TryParse($params, [ref]$n)
+            if ($n -lt 1) { $n = 1 }
+            for ($i = 0; $i -lt $n; $i++) { Term-CommitLine }
+        }
         "C" {
             $n = 1
             [void][int]::TryParse($params, [ref]$n)
@@ -214,6 +296,15 @@ function Apply-TermCsi([string]$seq) {
             $script:TermCurCol = [Math]::Max(0, $script:TermCurCol - $n)
             $script:TermDirty = $true
         }
+        "G" {
+            $n = 1
+            [void][int]::TryParse($params, [ref]$n)
+            if ($n -lt 1) { $n = 1 }
+            $script:TermCurCol = $n - 1
+            $script:TermDirty = $true
+        }
+        "H" { $script:TermCurCol = 0; $script:TermDirty = $true }
+        "f" { $script:TermCurCol = 0; $script:TermDirty = $true }
         "m" { }
         default { }
     }
@@ -264,9 +355,17 @@ function Feed-TermByte([byte]$b) {
     switch ($script:TermEsc) {
         1 {
             if ($b -eq 91) { $script:TermEsc = 2; $script:TermCsi = ""; return }
-            if ($b -eq 93) { $script:TermEsc = 3; return }
-            if ($b -eq 80 -or $b -eq 88 -or $b -eq 94 -or $b -eq 95) { $script:TermEsc = 3; return }
+            if ($b -eq 93 -or $b -eq 80 -or $b -eq 88 -or $b -eq 94 -or $b -eq 95) {
+                $script:TermEsc = 3
+                $script:TermOscLen = 0
+                return
+            }
+            if ($b -eq 55 -or $b -eq 56 -or $b -eq 77 -or $b -eq 99) {
+                $script:TermEsc = 0
+                return
+            }
             $script:TermEsc = 0
+            if ($b -ge 32) { Feed-TermPrintableByte $b }
             return
         }
         2 {
@@ -274,15 +373,25 @@ function Feed-TermByte([byte]$b) {
                 Apply-TermCsi ($script:TermCsi + [char]$b)
                 $script:TermEsc = 0
                 $script:TermCsi = ""
+            } elseif ($b -eq 10 -or $b -eq 13) {
+                $script:TermEsc = 0
+                $script:TermCsi = ""
             } else {
                 $script:TermCsi += [char]$b
-                if ($script:TermCsi.Length -gt 32) { $script:TermEsc = 0; $script:TermCsi = "" }
+                if ($script:TermCsi.Length -gt 24) { $script:TermEsc = 0; $script:TermCsi = "" }
             }
             return
         }
         3 {
-            if ($b -eq 7) { $script:TermEsc = 0 }
-            elseif ($b -eq 27) { $script:TermEsc = 1 }
+            $script:TermOscLen++
+            if ($b -eq 7 -or $b -eq 10 -or $b -eq 13 -or $script:TermOscLen -gt 80) {
+                $script:TermEsc = 0
+                $script:TermOscLen = 0
+                if ($b -eq 10) { Term-CommitLine }
+                elseif ($b -eq 13) { $script:TermCurCol = 0; $script:TermDirty = $true }
+            } elseif ($b -eq 27) {
+                $script:TermEsc = 1
+            }
             return
         }
     }
@@ -298,7 +407,7 @@ function Feed-TermByte([byte]$b) {
             if ($sp -le 0) { $sp = 8 }
             for ($i = 0; $i -lt $sp; $i++) { Term-WriteChar ([char]32) }
         }
-        12 { Reset-TerminalEmulator }
+        12 { Term-CommitLine }
         default { Feed-TermPrintableByte $b }
     }
 }
@@ -311,6 +420,8 @@ function Feed-TermBytes([byte[]]$buf) {
 
 function Send-TermBytes([byte[]]$bytes) {
     if ($null -eq $script:TermPort -or -not $script:TermPort.IsOpen) { return }
+    $script:TermSelecting = $false
+    Snap-TermCaret
     Send-GecSerialBytes $script:TermPort $bytes
 }
 
@@ -329,8 +440,13 @@ function Send-TerminalCommand([string]$cmd) {
 function Read-TerminalBytes {
     if ($null -eq $script:TermPort -or -not $script:TermPort.IsOpen) { return }
     try {
-        $buf = Read-GecSerialRaw $script:TermPort
-        if ($buf -and $buf.Length -gt 0) { Feed-TermBytes $buf }
+        $rounds = 0
+        while ($rounds -lt 32) {
+            $buf = Read-GecSerialRaw $script:TermPort
+            if (-not $buf -or $buf.Length -le 0) { break }
+            Feed-TermBytes $buf
+            $rounds++
+        }
     } catch {
         $lblTermStatus.Text = ("读取失败: " + $_.Exception.Message)
         Disconnect-Terminal
@@ -338,18 +454,18 @@ function Read-TerminalBytes {
 }
 
 $termPollTimer = New-Object System.Windows.Forms.Timer
-$termPollTimer.Interval = 30
+$termPollTimer.Interval = 16
 $termPollTimer.Add_Tick({ Read-TerminalBytes })
 
 function Connect-Terminal {
     if ($script:TermConnected) { return }
     if ($script:Xfer -and -not $script:Xfer.finished) {
-        [System.Windows.Forms.MessageBox]::Show("传输进行中，请等待完成或取消后再连接终端。", "串口终端", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("传输进行中，请等待完成或取消后再连接。", "串口", "OK", "Warning") | Out-Null
         return
     }
     $pb = Get-PortBaud
     if (-not $pb.Port) {
-        [System.Windows.Forms.MessageBox]::Show("请选择串口。先关掉 MobaXterm 的串口标签。", "串口终端", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("请选择串口。先关掉 MobaXterm 的串口标签。", "串口", "OK", "Warning") | Out-Null
         return
     }
     $script:TermState = [hashtable]@{
@@ -358,15 +474,16 @@ function Connect-Terminal {
     try {
         $script:TermPort = Open-GecSerialPort $pb.Port $pb.Baud
     } catch {
-        [System.Windows.Forms.MessageBox]::Show(("打不开 " + $pb.Port + "：`n" + $_.Exception.Message + "`n`n请先关闭 MobaXterm 串口标签。"), "串口终端", "OK", "Error") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show(("打不开 " + $pb.Port + "：`n" + $_.Exception.Message + "`n`n1. 关掉 MobaXterm 的串口标签（不用退出软件）`n2. 不要同时开两个本工具窗口`n3. 拔掉 USB 转串口，等 3 秒再插上，然后点刷新"), "串口", "OK", "Error") | Out-Null
         $script:TermPort = $null
         return
     }
     Reset-TerminalEmulator
     $lblTermStatus.Text = ("正在连接 " + $pb.Port + " @ " + $pb.Baud + " ...")
+    Start-Sleep -Milliseconds 200
     $ok = Restore-GecShell $script:TermPort $script:TermState
     if (-not $ok) {
-        [System.Windows.Forms.MessageBox]::Show("板子无回音。请按复位键，并确认 UART0 接线。", "串口终端", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("板子无回音。请按复位键，并确认 UART0 接线。", "串口", "OK", "Warning") | Out-Null
         try { $script:TermPort.Close() } catch {}
         $script:TermPort = $null
         $lblTermStatus.Text = "连接失败。"
@@ -375,48 +492,103 @@ function Connect-Terminal {
     while ($script:TermPort.BytesToRead -gt 0) {
         try { $null = $script:TermPort.ReadExisting() } catch { break }
     }
+    Get-TermSize
+    $null = Send-GecCmd $script:TermPort ("export TERM=linux; stty cols " + $script:TermCols + " rows " + $script:TermRows + " icanon echo isig icrnl -ixon erase ^H") 700
+    while ($script:TermPort.BytesToRead -gt 0) {
+        try { $null = $script:TermPort.ReadExisting() } catch { break }
+    }
     Reset-TerminalEmulator
     $script:TermConnected = $true
     Send-TermBytes ([byte[]]@(13))
-    Start-Sleep -Milliseconds 120
+    Start-Sleep -Milliseconds 150
     Read-TerminalBytes
     $btnTermConnect.Enabled = $false
     $btnTermDisconnect.Enabled = $true
     $btnTermCtrlC.Enabled = $true
-    $btnStart.Enabled = $false
-    $btnRun.Enabled = $false
+    $btnTermCtrlD.Enabled = $true
     Set-PortControlsEnabled $false
-    $lblTermStatus.Text = ($pb.Port + " 已连接 — 在黑框里直接输入，Enter 执行")
+    $lblTermStatus.Text = ($pb.Port + " 已连接 — 和 MobaXterm 一样在黑框里输入，Enter 执行")
     $lblTermStatus.ForeColor = $script:Ui.Text
     Update-ConnLabel
-    $termPollTimer.Start()
-    $txtTerm.Focus()
+    if ($script:CurrentPage -eq "term") {
+        $termPollTimer.Start()
+        $txtTerm.Focus()
+    }
 }
 
 function Disconnect-Terminal {
     $termPollTimer.Stop()
     if ($script:TermPort) {
-        try { if ($script:TermPort.IsOpen) { $script:TermPort.Close() } } catch {}
+        if (Get-Command Close-GecSerialPort -ErrorAction SilentlyContinue) {
+            Close-GecSerialPort $script:TermPort
+        } else {
+            try { if ($script:TermPort.IsOpen) { $script:TermPort.Close() } } catch {}
+        }
         $script:TermPort = $null
     }
     $script:TermConnected = $false
     $script:TermState = $null
+    $script:LastLaunch = $null
     $btnTermConnect.Enabled = $true
     $btnTermDisconnect.Enabled = $false
     $btnTermCtrlC.Enabled = $false
+    $btnTermCtrlD.Enabled = $false
     if (-not ($script:Xfer -and -not $script:Xfer.finished)) {
         $btnStart.Enabled = $true
         $btnRun.Enabled = $true
         Set-PortControlsEnabled $true
     }
-    $lblTermStatus.Text = "未连接。先关 MobaXterm 串口标签，再点连接。"
+    $lblTermStatus.Text = "未连接。点顶栏「连接」。"
     $lblTermStatus.ForeColor = $script:Ui.Muted
     Update-ConnLabel
 }
 
+function Show-TermNote([string]$text) {
+    if ([string]::IsNullOrWhiteSpace($text)) { return }
+    $script:TermLines.Add($text)
+    $script:TermDirty = $true
+    Sync-TerminalDisplay
+}
+
+function Stop-LastLaunchApp {
+    if (-not $script:LastLaunch -or -not $script:TermPort -or -not $script:TermPort.IsOpen) { return $false }
+    $base = [string]$script:LastLaunch.base
+    if ($base -notmatch '^[A-Za-z0-9._+-]+$') { return $false }
+    $pids = @($script:LastLaunch.pids | Where-Object { $_ -match '^\d+$' })
+    $kill = ""
+    if ($pids.Count -gt 0) { $kill = "kill " + ($pids -join " ") + " 2>/dev/null; " }
+    $kill += "killall " + $base + " 2>/dev/null; echo KILL_DONE"
+    $termPollTimer.Stop()
+    try {
+        $null = Send-GecCmd $script:TermPort $kill 700 "KILL_DONE"
+    } catch {
+    } finally {
+        if ($script:TermConnected) { $termPollTimer.Start() }
+    }
+    $script:LastLaunch = $null
+    return $true
+}
+
 function Send-TermCtrlC {
     if (-not $script:TermConnected -or -not $script:TermPort) { return }
+    $hadApp = [bool]$script:LastLaunch
+    $base = ""
+    if ($hadApp) { $base = [string]$script:LastLaunch.base }
     Send-TermBytes ([byte[]]@(3))
+    if ($hadApp) {
+        Start-Sleep -Milliseconds 60
+        if (Stop-LastLaunchApp) {
+            $note = "已停止 " + $base
+            $lblTermStatus.Text = $note
+            $lblTermStatus.ForeColor = $uiText
+            Show-TermNote $note
+        }
+    }
+}
+
+function Send-TermCtrlD {
+    if (-not $script:TermConnected -or -not $script:TermPort) { return }
+    Send-TermBytes ([byte[]]@(4))
 }
 
 function Paste-ToTerminal {
@@ -450,16 +622,10 @@ $txtTerm.Add_KeyDown({
         $_.Handled = $true
         return
     }
-    if ($ctrl -and $k -eq [System.Windows.Forms.Keys]::A) {
-        $txtTerm.SelectAll()
-        $_.SuppressKeyPress = $true
-        $_.Handled = $true
-        return
-    }
     $map = @{
         Return    = @(13)
         Enter     = @(13)
-        Back      = @(127)
+        Back      = @(8)
         Tab       = @(9)
         Up        = @(27, 91, 65)
         Down      = @(27, 91, 66)
@@ -469,8 +635,8 @@ $txtTerm.Add_KeyDown({
         End       = @(27, 91, 70)
         Delete    = @(27, 91, 51, 126)
         Escape    = @(27)
-        Prior     = $null
-        Next      = $null
+        Prior     = @(27, 91, 53, 126)
+        Next      = @(27, 91, 54, 126)
     }
     $name = [string]$k
     if ($ctrl) {
@@ -508,17 +674,106 @@ $txtTerm.Add_KeyPress({
     $_.Handled = $true
 })
 
+$txtTerm.Add_MouseDown({
+    if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+        $script:TermSelecting = $true
+    }
+})
+
 $txtTerm.Add_MouseUp({
     if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
+        $script:TermSelecting = $false
         if ($txtTerm.SelectionLength -gt 0) {
             [System.Windows.Forms.Clipboard]::SetText($txtTerm.SelectedText)
         } else {
             Paste-ToTerminal
         }
+        return
+    }
+    if ($_.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+        $script:TermSelecting = $false
+        if ($txtTerm.SelectionLength -le 0) { Snap-TermCaret }
     }
 })
+
+function Start-TermQuickLaunch {
+    if ($script:Xfer -and -not $script:Xfer.finished) {
+        [System.Windows.Forms.MessageBox]::Show("传输进行中，请等待完成后再启动。", "快捷启动", "OK", "Warning") | Out-Null
+        return
+    }
+    $path = Resolve-GecLaunchPath $txtLaunch.Text
+    if (-not $path) {
+        [System.Windows.Forms.MessageBox]::Show("请输入板上路径，例如 /home/lamp，或只填 lamp。", "快捷启动", "OK", "Warning") | Out-Null
+        $txtLaunch.Focus()
+        return
+    }
+    if (-not (Test-GecRemotePath $path)) {
+        [System.Windows.Forms.MessageBox]::Show("路径只允许 /home/名、/tmp/名 或 /usr/local/bin/名。", "快捷启动", "OK", "Warning") | Out-Null
+        $txtLaunch.Focus()
+        return
+    }
+    $txtLaunch.Text = $path
+    if ($txtRemote) { $txtRemote.Text = $path }
+    if (-not $script:TermConnected) {
+        $lblTermStatus.Text = "正在连接串口..."
+        Connect-Terminal
+        if (-not $script:TermConnected) { return }
+    }
+    $termPollTimer.Stop()
+    $btnTermLaunch.Enabled = $false
+    $lblTermStatus.Text = ("正在检测 " + $path + " ...")
+    $lblTermStatus.ForeColor = $uiText
+    [System.Windows.Forms.Application]::DoEvents()
+    if (-not $script:TermState) {
+        $script:TermState = @{
+            logs = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+        }
+    }
+    $script:TermState.remote = $path
+    $script:TermState.message = ""
+    try {
+        Start-GecBoardApp $script:TermPort $script:TermState
+        $base = [string]$script:TermState.launchBase
+        if (-not $base) { $base = Split-Path -Leaf $path }
+        $script:LastLaunch = @{
+            base   = $base
+            remote = [string]$script:TermState.remote
+            pids   = @($script:TermState.launchPids)
+        }
+        $msg = [string]$script:TermState.message
+        if (-not $msg) { $msg = "已启动 " + $base }
+        $lblTermStatus.Text = $msg + "  ·  Ctrl+C 停止"
+        $lblTermStatus.ForeColor = $uiText
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log $msg }
+        Show-TermNote $msg
+    } catch {
+        $err = [string]$_.Exception.Message
+        $lblTermStatus.Text = $err
+        $lblTermStatus.ForeColor = $uiDanger
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log ("启动失败: " + $err) }
+        [System.Windows.Forms.MessageBox]::Show($err, "快捷启动", "OK", "Warning") | Out-Null
+    } finally {
+        $btnTermLaunch.Enabled = $true
+        if ($script:TermConnected) { $termPollTimer.Start() }
+        $txtTerm.Focus()
+    }
+}
 
 $btnTermConnect.Add_Click({ Connect-Terminal })
 $btnTermDisconnect.Add_Click({ Disconnect-Terminal })
 $btnTermClear.Add_Click({ Reset-TerminalEmulator; if ($script:TermConnected) { $txtTerm.Focus() } })
 $btnTermCtrlC.Add_Click({ Send-TermCtrlC; $txtTerm.Focus() })
+$btnTermCtrlD.Add_Click({ Send-TermCtrlD; $txtTerm.Focus() })
+$btnTermLaunch.Add_Click({ Start-TermQuickLaunch })
+$txtLaunch.Add_KeyDown({
+    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter -or $_.KeyCode -eq [System.Windows.Forms.Keys]::Return) {
+        $_.SuppressKeyPress = $true
+        $_.Handled = $true
+        Start-TermQuickLaunch
+    }
+})
+if ($txtRemote) {
+    $txtRemote.Add_TextChanged({
+        if ($txtLaunch -and -not $txtLaunch.Focused) { $txtLaunch.Text = $txtRemote.Text }
+    })
+}

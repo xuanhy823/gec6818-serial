@@ -2,6 +2,7 @@
 if (-not ([System.Management.Automation.PSTypeName]"IosChromeForm").Type) {
     $src = @"
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -224,6 +225,257 @@ public class IosProgress : Panel {
         }
     }
 }
+
+public class IosComboItems {
+    readonly List<string> _list = new List<string>();
+    public int Count { get { return _list.Count; } }
+    public string this[int i] { get { return _list[i]; } }
+    public void Add(object item) {
+        if (item == null) return;
+        _list.Add(Convert.ToString(item));
+    }
+    public void Clear() { _list.Clear(); }
+    public bool Contains(object item) {
+        return item != null && _list.Contains(Convert.ToString(item));
+    }
+}
+
+public class IosCombo : Control {
+    readonly TextBox _box = new TextBox();
+    readonly IosComboItems _items = new IosComboItems();
+    IosComboPopup _popup;
+    bool _editable = true;
+    bool _closing;
+    int _index = -1;
+
+    public IosComboItems Items { get { return _items; } }
+    public FlatStyle FlatStyle { get; set; }
+    public bool Editable {
+        get { return _editable; }
+        set { _editable = value; ApplyEdit(); }
+    }
+    public string DropDownStyle {
+        get { return _editable ? "DropDown" : "DropDownList"; }
+        set {
+            _editable = value == null || !value.Equals("DropDownList", StringComparison.OrdinalIgnoreCase);
+            ApplyEdit();
+        }
+    }
+    public int SelectedIndex {
+        get { return _index; }
+        set { SelectIndex(value); }
+    }
+    public object SelectedItem {
+        get { return _index >= 0 && _index < _items.Count ? _items[_index] : _box.Text; }
+        set {
+            string s = value == null ? "" : Convert.ToString(value);
+            for (int i = 0; i < _items.Count; i++) {
+                if (_items[i] == s) { SelectIndex(i); return; }
+            }
+            _index = -1;
+            _box.Text = s;
+            Invalidate();
+        }
+    }
+    public override string Text {
+        get { return _box.Text; }
+        set { _box.Text = value ?? ""; }
+    }
+
+    public IosCombo() {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        Height = 26;
+        Cursor = Cursors.Hand;
+        _box.BorderStyle = BorderStyle.None;
+        _box.Font = Font;
+        _box.ForeColor = ForeColor;
+        _box.BackColor = BackColor;
+        Controls.Add(_box);
+        _box.Click += delegate { if (!_editable) Toggle(); };
+        _box.GotFocus += delegate { if (!_editable) _box.Parent.Focus(); };
+        ApplyEdit();
+        LayoutBox();
+    }
+
+    void ApplyEdit() {
+        _box.ReadOnly = !_editable;
+        _box.Cursor = _editable ? Cursors.IBeam : Cursors.Hand;
+        _box.TabStop = _editable;
+    }
+    void LayoutBox() {
+        _box.Location = new Point(4, Math.Max(2, (Height - 16) / 2));
+        _box.Size = new Size(Math.Max(8, Width - 24), 16);
+    }
+    void SelectIndex(int i) {
+        if (i < 0 || i >= _items.Count) {
+            _index = -1;
+            return;
+        }
+        _index = i;
+        _box.Text = _items[i];
+        Invalidate();
+    }
+    public void Toggle() {
+        if (_popup != null && !_popup.IsDisposed) { ClosePopup(); return; }
+        if (_closing) { _closing = false; return; }
+        OpenPopup();
+    }
+    public void OpenPopup() {
+        if (!Enabled || _items.Count <= 0) return;
+        ClosePopup();
+        _popup = new IosComboPopup(this);
+        Point screen = PointToScreen(new Point(0, Height + 6));
+        _popup.Location = screen;
+        _popup.Show(FindForm());
+    }
+    public void ClosePopup() {
+        if (_popup == null) return;
+        IosComboPopup p = _popup;
+        _popup = null;
+        if (!p.IsDisposed) p.Close();
+    }
+    internal void NotifyClosed() {
+        _popup = null;
+        _closing = true;
+    }
+    protected override void OnResize(EventArgs e) { LayoutBox(); base.OnResize(e); }
+    protected override void OnEnabledChanged(EventArgs e) {
+        _box.Enabled = Enabled;
+        _box.ForeColor = Enabled ? ForeColor : Color.FromArgb(160, 160, 166);
+        Invalidate();
+        base.OnEnabledChanged(e);
+    }
+    protected override void OnBackColorChanged(EventArgs e) {
+        _box.BackColor = BackColor;
+        base.OnBackColorChanged(e);
+    }
+    protected override void OnForeColorChanged(EventArgs e) {
+        _box.ForeColor = ForeColor;
+        base.OnForeColorChanged(e);
+    }
+    protected override void OnFontChanged(EventArgs e) {
+        _box.Font = Font;
+        base.OnFontChanged(e);
+    }
+    protected override void OnMouseDown(MouseEventArgs e) {
+        if (e.Button == MouseButtons.Left) {
+            if (!_editable || e.X >= Width - 22) Toggle();
+        }
+        base.OnMouseDown(e);
+    }
+    protected override void OnPaint(PaintEventArgs e) {
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        if (Parent != null) e.Graphics.Clear(Parent.BackColor);
+        Color arrow = Enabled ? Color.FromArgb(113, 113, 122) : Color.FromArgb(180, 180, 184);
+        float cx = Width - 12f, cy = Height / 2f;
+        using (Pen pen = new Pen(arrow, 1.7f)) {
+            pen.EndCap = LineCap.Round;
+            pen.StartCap = LineCap.Round;
+            e.Graphics.DrawLines(pen, new PointF[] {
+                new PointF(cx - 4.2f, cy - 1.2f),
+                new PointF(cx, cy + 2.8f),
+                new PointF(cx + 4.2f, cy - 1.2f)
+            });
+        }
+    }
+}
+
+public class IosComboPopup : Form {
+    readonly IosCombo _owner;
+    readonly int _itemH = 32;
+    readonly int _pad = 6;
+    int _hover = -1;
+
+    public IosComboPopup(IosCombo owner) {
+        _owner = owner;
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        BackColor = Color.White;
+        DoubleBuffered = true;
+        Font = owner.Font;
+        int w = Math.Max(owner.Width, 148);
+        int h = _pad * 2 + Math.Max(1, owner.Items.Count) * _itemH;
+        Size = new Size(w, h);
+        _hover = owner.SelectedIndex;
+    }
+
+    protected override CreateParams CreateParams {
+        get {
+            CreateParams cp = base.CreateParams;
+            cp.ClassStyle |= 0x00020000;
+            return cp;
+        }
+    }
+    protected override void OnHandleCreated(EventArgs e) {
+        base.OnHandleCreated(e);
+        IntPtr rgn = IosNative.CreateRoundRectRgn(0, 0, Width + 1, Height + 1, 18, 18);
+        Region = Region.FromHrgn(rgn);
+        IosNative.DeleteObject(rgn);
+    }
+    protected override void OnDeactivate(EventArgs e) {
+        base.OnDeactivate(e);
+        _owner.NotifyClosed();
+        Close();
+    }
+    int Hit(int y) {
+        int i = (y - _pad) / _itemH;
+        if (i < 0 || i >= _owner.Items.Count) return -1;
+        return i;
+    }
+    protected override void OnMouseMove(MouseEventArgs e) {
+        int i = Hit(e.Y);
+        if (i != _hover) { _hover = i; Invalidate(); }
+        base.OnMouseMove(e);
+    }
+    protected override void OnMouseLeave(EventArgs e) {
+        _hover = -1;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+    protected override void OnMouseClick(MouseEventArgs e) {
+        int i = Hit(e.Y);
+        if (i >= 0) {
+            _owner.SelectedIndex = i;
+            _owner.NotifyClosed();
+            Close();
+        }
+        base.OnMouseClick(e);
+    }
+    protected override void OnPaint(PaintEventArgs e) {
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.Clear(Color.White);
+        Rectangle card = new Rectangle(0, 0, Width - 1, Height - 1);
+        using (GraphicsPath path = IosGfx.RoundRect(card, 12))
+        using (SolidBrush b = new SolidBrush(Color.White))
+        using (Pen pen = new Pen(Color.FromArgb(228, 228, 231))) {
+            e.Graphics.FillPath(b, path);
+            e.Graphics.DrawPath(pen, path);
+        }
+        for (int i = 0; i < _owner.Items.Count; i++) {
+            Rectangle row = new Rectangle(5, _pad + i * _itemH, Width - 11, _itemH - 2);
+            bool sel = i == _owner.SelectedIndex;
+            bool hot = i == _hover;
+            if (sel || hot) {
+                Color fill = sel ? Color.FromArgb(237, 237, 238) : Color.FromArgb(247, 247, 248);
+                using (GraphicsPath rp = IosGfx.RoundRect(row, 8))
+                using (SolidBrush rb = new SolidBrush(fill)) {
+                    e.Graphics.FillPath(rb, rp);
+                }
+            }
+            Color fg = sel ? Color.FromArgb(24, 24, 27) : Color.FromArgb(82, 82, 91);
+            TextRenderer.DrawText(e.Graphics, _owner.Items[i], Font,
+                new Rectangle(row.X + 8, row.Y, row.Width - 28, row.Height), fg,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            if (sel) {
+                TextRenderer.DrawText(e.Graphics, "✓", Font,
+                    new Rectangle(row.Right - 26, row.Y, 22, row.Height),
+                    Color.FromArgb(24, 24, 27),
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
+            }
+        }
+    }
+}
 "@
     Add-Type -TypeDefinition $src -ReferencedAssemblies @("System.Windows.Forms", "System.Drawing")
 }
@@ -299,8 +551,7 @@ function Add-Btn([System.Windows.Forms.Control]$parent, [string]$t, [int]$x, [in
 }
 
 function New-UiCombo([System.Windows.Forms.Control]$parent) {
-    $c = New-Object System.Windows.Forms.ComboBox
-    $c.FlatStyle = "Flat"
+    $c = New-Object IosCombo
     $c.BackColor = $script:Ui.Input
     $c.ForeColor = $script:Ui.Text
     $c.Font = $script:FontUi

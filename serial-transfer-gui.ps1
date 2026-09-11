@@ -58,17 +58,41 @@ $nav.Dock = "Fill"
 $nav.BackColor = $script:Ui.Nav
 $root.Controls.Add($nav, 0, 0)
 
-$fldPort = New-Field $nav 16 11 168 36
-$cmbPort = New-UiCombo $fldPort
-$cmbPort.Dock = "Fill"
+$linkBar = New-Object IosCard
+$linkBar.CornerRadius = 12
+$linkBar.BackColor = $script:Ui.Seg
+$linkBar.LineColor = $script:Ui.Seg
+$linkBar.Location = New-Object System.Drawing.Point(16, 11)
+$linkBar.Size = New-Object System.Drawing.Size(332, 36)
+$nav.Controls.Add($linkBar)
+
+$cmbPort = New-UiCombo $linkBar
+$cmbPort.Location = New-Object System.Drawing.Point(6, 5)
+$cmbPort.Size = New-Object System.Drawing.Size(110, 26)
 $cmbPort.DropDownStyle = "DropDown"
+$cmbPort.BackColor = $script:Ui.Seg
 
-$btnRef = Add-Btn $nav "刷新" 192 11 68 36 $script:Ui.Seg $script:Ui.Text
+$divPort = New-Object System.Windows.Forms.Panel
+$divPort.BackColor = [System.Drawing.Color]::FromArgb(214, 214, 218)
+$divPort.Location = New-Object System.Drawing.Point(118, 9)
+$divPort.Size = New-Object System.Drawing.Size(1, 18)
+$linkBar.Controls.Add($divPort)
 
-$fldBaud = New-Field $nav 268 11 128 36
-$cmbBaud = New-UiCombo $fldBaud
-$cmbBaud.Dock = "Fill"
+$btnRef = Add-Btn $linkBar "刷新" 124 3 52 30 $script:Ui.Seg $script:Ui.Muted
+$btnRef.CornerRadius = 10
+$btnRef.Font = $script:FontUiSm
+
+$divBaud = New-Object System.Windows.Forms.Panel
+$divBaud.BackColor = [System.Drawing.Color]::FromArgb(214, 214, 218)
+$divBaud.Location = New-Object System.Drawing.Point(180, 9)
+$divBaud.Size = New-Object System.Drawing.Size(1, 18)
+$linkBar.Controls.Add($divBaud)
+
+$cmbBaud = New-UiCombo $linkBar
+$cmbBaud.Location = New-Object System.Drawing.Point(186, 5)
+$cmbBaud.Size = New-Object System.Drawing.Size(136, 26)
 $cmbBaud.DropDownStyle = "DropDownList"
+$cmbBaud.BackColor = $script:Ui.Seg
 @(9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600) | ForEach-Object { [void]$cmbBaud.Items.Add("$_") }
 $cmbBaud.SelectedItem = "115200"
 
@@ -76,13 +100,17 @@ $seg = New-Object IosCard
 $seg.CornerRadius = 12
 $seg.BackColor = $script:Ui.Seg
 $seg.LineColor = $script:Ui.Seg
-$seg.Location = New-Object System.Drawing.Point(560, 11)
-$seg.Size = New-Object System.Drawing.Size(400, 36)
+$seg.Location = New-Object System.Drawing.Point(358, 11)
+$seg.Size = New-Object System.Drawing.Size(236, 36)
 $nav.Controls.Add($seg)
 
 $btnSegXfer = Add-Btn $seg "文件传输" 3 3 194 30 $script:Ui.Seg $script:Ui.Muted
 $btnSegTerm = Add-Btn $seg "串口终端" 203 3 194 30 ([System.Drawing.Color]::White) $script:Ui.Text
 $btnSegTerm.RainbowBorder = $true
+
+$btnTermConnect = Add-Btn $nav "连接" 412 11 72 36 $script:Ui.Ink ([System.Drawing.Color]::White)
+$btnTermDisconnect = Add-Btn $nav "断开" 492 11 64 36 $script:Ui.Danger ([System.Drawing.Color]::White)
+$btnTermDisconnect.Enabled = $false
 
 $pillConn = New-Object IosCard
 $pillConn.CornerRadius = 12
@@ -133,18 +161,19 @@ $pageTerm.Controls.Add($tabTerm)
 $termBar = New-Object System.Windows.Forms.Panel
 $termBar.Dock = "Fill"
 $termBar.BackColor = $script:Ui.Bg
-$btnTermConnect = Add-Btn $termBar "连接" 4 4 88 36 $script:Ui.Ink ([System.Drawing.Color]::White)
-$btnTermDisconnect = Add-Btn $termBar "断开" 100 4 72 36 $script:Ui.Danger ([System.Drawing.Color]::White)
-$btnTermDisconnect.Enabled = $false
-$btnTermClear = Add-Btn $termBar "清屏" 180 4 68 36 $script:Ui.Seg $script:Ui.Text
-$btnTermCtrlC = Add-Btn $termBar "Ctrl+C" 256 4 76 36 $script:Ui.Seg $script:Ui.Text
+$btnTermClear = Add-Btn $termBar "清屏" 4 4 68 36 $script:Ui.Seg $script:Ui.Text
+$btnTermCtrlC = Add-Btn $termBar "Ctrl+C" 80 4 76 36 $script:Ui.Seg $script:Ui.Text
 $btnTermCtrlC.Enabled = $false
+$btnTermCtrlD = Add-Btn $termBar "Ctrl+D" 164 4 76 36 $script:Ui.Seg $script:Ui.Text
+$btnTermCtrlD.Enabled = $false
 $lblTermStatus = New-Object System.Windows.Forms.Label
-$lblTermStatus.Text = "先关 MobaXterm 串口标签，再点连接"
-$lblTermStatus.Location = New-Object System.Drawing.Point(348, 12)
+$lblTermStatus.Text = "先点顶栏「连接」，再在黑框里输入"
+$lblTermStatus.Location = New-Object System.Drawing.Point(252, 12)
 $lblTermStatus.Size = New-Object System.Drawing.Size(420, 22)
 $lblTermStatus.ForeColor = $script:Ui.Muted
 $lblTermStatus.BackColor = [System.Drawing.Color]::Transparent
+$lblTermStatus.AutoEllipsis = $true
+$lblTermStatus.UseMnemonic = $false
 $termBar.Controls.Add($lblTermStatus)
 
 $script:CurrentPage = "term"
@@ -165,8 +194,12 @@ function Show-GecPage([string]$which) {
         $btnSegXfer.ForeColor = $script:Ui.Muted
         $btnSegXfer.RainbowBorder = $false
         $form.AcceptButton = $null
-        if ($script:TermConnected) { $txtTerm.Focus() }
+        if ($script:TermConnected) {
+            if ($termPollTimer -and -not ($script:Xfer -and -not $script:Xfer.finished)) { $termPollTimer.Start() }
+            $txtTerm.Focus()
+        }
     } else {
+        if ($termPollTimer) { $termPollTimer.Stop() }
         $btnSegXfer.BackColor = [System.Drawing.Color]::White
         $btnSegXfer.ForeColor = $script:Ui.Text
         $btnSegXfer.RainbowBorder = $true
@@ -227,18 +260,9 @@ $cardAct.Dock = "Top"
 $cardAct.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 10)
 $xferGrid.SetRow($cardAct, 2)
 
-$chkInstall = New-Object System.Windows.Forms.CheckBox
-$chkInstall.Text = "再拷到 /usr/local/bin"
-$chkInstall.Location = New-Object System.Drawing.Point(16, 12)
-$chkInstall.Size = New-Object System.Drawing.Size(220, 24)
-$chkInstall.ForeColor = $script:Ui.Text
-$chkInstall.BackColor = [System.Drawing.Color]::Transparent
-$chkInstall.Font = $script:FontUi
-$cardAct.Controls.Add($chkInstall)
-
 $chkRun = New-Object System.Windows.Forms.CheckBox
 $chkRun.Text = "传完自动启动"
-$chkRun.Location = New-Object System.Drawing.Point(250, 12)
+$chkRun.Location = New-Object System.Drawing.Point(16, 12)
 $chkRun.Size = New-Object System.Drawing.Size(160, 24)
 $chkRun.ForeColor = $script:Ui.Text
 $chkRun.BackColor = [System.Drawing.Color]::Transparent
@@ -290,7 +314,12 @@ $txtLog.BringToFront()
 . (Join-Path $PSScriptRoot "serial-term.ps1")
 
 function Write-Log([string]$line) {
-    $msg = "[{0}] {1}`r`n" -f (Get-Date -Format "HH:mm:ss"), $line
+    $clean = $line
+    if (Get-Command Format-GecLogText -ErrorAction SilentlyContinue) {
+        $clean = Format-GecLogText $line
+    }
+    if ([string]::IsNullOrWhiteSpace($clean)) { return }
+    $msg = "[{0}] {1}`r`n" -f (Get-Date -Format "HH:mm:ss"), $clean
     $txtLog.AppendText($msg)
     $txtLog.SelectionStart = $txtLog.Text.Length
     $txtLog.ScrollToCaret()
@@ -356,14 +385,17 @@ function Update-ConnLabel {
 
 function Layout-Nav {
     $w = $nav.ClientSize.Width
-    $pillConn.Left = [Math]::Max(420, $w - 148)
-    $seg.Width = [Math]::Min(320, [Math]::Max(220, $w - 568))
-    $seg.Left = [Math]::Max(408, $pillConn.Left - $seg.Width - 12)
+    $linkBar.Left = 16
+    $pillConn.Left = [Math]::Max(700, $w - 148)
+    $btnTermDisconnect.Left = $pillConn.Left - 72
+    $btnTermConnect.Left = $btnTermDisconnect.Left - 80
+    $seg.Left = $linkBar.Left + $linkBar.Width + 10
+    $seg.Width = [Math]::Max(176, $btnTermConnect.Left - 10 - $seg.Left)
     $half = [int](($seg.Width - 10) / 2)
     $btnSegXfer.Width = $half
     $btnSegTerm.Left = 4 + $half
     $btnSegTerm.Width = $half
-    $lblTermStatus.Width = [Math]::Max(160, $termBar.ClientSize.Width - 360)
+    $lblTermStatus.Width = [Math]::Max(160, $termBar.ClientSize.Width - 264)
 }
 
 $nav.Add_Resize({ Layout-Nav })
@@ -403,14 +435,25 @@ function New-XferState {
         install = $false; run = $false; cancel = $false
         done = 0L; total = 1L; t0 = (Get-Date)
         logs = $logs; error = $null; finished = $false; ok = $false; message = ""
+        keepOpen = $false; sharedPort = $null; launchBase = ""; launchPids = @()
     })
 }
 
 function Stop-XferUi {
-    $btnStart.Enabled = -not $script:TermConnected
-    $btnRun.Enabled = -not $script:TermConnected
+    $btnStart.Enabled = $true
+    $btnRun.Enabled = $true
     $btnCancel.Enabled = $false
-    if (-not $script:TermConnected) { Set-PortControlsEnabled $true }
+    $btnTermConnect.Enabled = -not $script:TermConnected
+    $btnTermDisconnect.Enabled = [bool]$script:TermConnected
+    $btnTermCtrlC.Enabled = [bool]$script:TermConnected
+    $btnTermCtrlD.Enabled = [bool]$script:TermConnected
+    $btnTermLaunch.Enabled = $true
+    if ($script:TermConnected) {
+        Set-PortControlsEnabled $false
+        if ($script:CurrentPage -eq "term") { $termPollTimer.Start() }
+    } else {
+        Set-PortControlsEnabled $true
+    }
     Update-ConnLabel
 }
 
@@ -422,7 +465,13 @@ function Drain-XferUi {
         $raw = [string]$st.logs[$script:LogSeen]
         $script:LogSeen++
         if ($raw -match "^\d{2}:\d{2}:\d{2}`t") {
-            $txtLog.AppendText(("[{0}] {1}`r`n" -f $raw.Substring(0, 8), $raw.Substring(9)))
+            $body = $raw.Substring(9)
+            if (Get-Command Format-GecLogText -ErrorAction SilentlyContinue) {
+                $body = Format-GecLogText $body
+            }
+            if (-not [string]::IsNullOrWhiteSpace($body)) {
+                $txtLog.AppendText(("[{0}] {1}`r`n" -f $raw.Substring(0, 8), $body))
+            }
         } else {
             Write-Log $raw
         }
@@ -442,6 +491,15 @@ function Drain-XferUi {
         if ($st.ok) {
             if ($st.message) { Write-Log ([string]$st.message) } else { Write-Log "传输成功。" }
             $lblProg.Text = "成功"
+            if ($st.launchBase) {
+                $script:LastLaunch = @{
+                    base   = [string]$st.launchBase
+                    remote = [string]$st.remote
+                    pids   = @($st.launchPids)
+                }
+                $lblTermStatus.Text = ([string]$st.message) + "  ·  Ctrl+C 停止"
+                $lblTermStatus.ForeColor = $script:Ui.Text
+            }
         } elseif ($st.error) {
             Write-Log ("失败: " + $st.error)
             $lblProg.Text = "失败"
@@ -463,7 +521,10 @@ function Start-CoreJob([string]$entry, $local, $remote, $portName, $baud, $insta
     $script:Xfer.baud = $baud
     $script:Xfer.install = $install
     $script:Xfer.run = $run
+    $script:Xfer.keepOpen = [bool]$script:TermConnected
+    $script:Xfer.sharedPort = $script:TermPort
     $script:LogSeen = 0
+    if ($termPollTimer) { $termPollTimer.Stop() }
     $rs = [runspacefactory]::CreateRunspace()
     $rs.Open()
     $rs.SessionStateProxy.SetVariable("State", $script:Xfer)
@@ -500,13 +561,15 @@ $txtLocal.Add_TextChanged({
     if ($name) { $txtRemote.Text = "/home/" + $name }
 })
 
+function Ensure-GecConnected {
+    if ($script:TermConnected -and $script:TermPort -and $script:TermPort.IsOpen) { return $true }
+    Connect-Terminal
+    return [bool]($script:TermConnected -and $script:TermPort -and $script:TermPort.IsOpen)
+}
+
 $btnStart.Add_Click({
-    if ($script:TermConnected) {
-        [System.Windows.Forms.MessageBox]::Show("终端已连接，请先断开终端再传输。", "串口传输", "OK", "Warning") | Out-Null
-        return
-    }
     if ($script:Xfer -and -not $script:Xfer.finished) { return }
-    $local = $txtLocal.Text.Trim()
+    $local = $txtLocal.Text.Trim().Trim('"').Trim("'")
     $remote = $txtRemote.Text.Trim()
     $pb = Get-PortBaud
     if (-not (Test-Path -LiteralPath $local)) {
@@ -525,23 +588,22 @@ $btnStart.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("缺少 serial-transfer-core.ps1", "串口传输", "OK", "Error") | Out-Null
         return
     }
+    if (-not (Ensure-GecConnected)) { return }
     $btnStart.Enabled = $false
     $btnRun.Enabled = $false
     $btnCancel.Enabled = $true
     $btnTermConnect.Enabled = $false
+    $btnTermDisconnect.Enabled = $false
+    $btnTermLaunch.Enabled = $false
     Set-PortControlsEnabled $false
     $barPct.Progress = 0
     $lblProg.Text = "连接中..."
     Write-Log ("开始 " + $pb.Port + " " + $pb.Baud + " -> " + $remote)
     Show-GecPage "xfer"
-    Start-CoreJob "xfer" $local $remote $pb.Port $pb.Baud ([bool]$chkInstall.Checked) ([bool]$chkRun.Checked)
+    Start-CoreJob "xfer" $local $remote $pb.Port $pb.Baud $false ([bool]$chkRun.Checked)
 })
 
 $btnRun.Add_Click({
-    if ($script:TermConnected) {
-        [System.Windows.Forms.MessageBox]::Show("终端已连接，请先断开终端再启动程序。", "启动", "OK", "Warning") | Out-Null
-        return
-    }
     if ($script:Xfer -and -not $script:Xfer.finished) { return }
     $remote = $txtRemote.Text.Trim()
     $pb = Get-PortBaud
@@ -553,10 +615,13 @@ $btnRun.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("请填写合法板上路径，例如 /home/vehicle_course", "启动", "OK", "Warning") | Out-Null
         return
     }
+    if (-not (Ensure-GecConnected)) { return }
     $btnStart.Enabled = $false
     $btnRun.Enabled = $false
     $btnCancel.Enabled = $true
     $btnTermConnect.Enabled = $false
+    $btnTermDisconnect.Enabled = $false
+    $btnTermLaunch.Enabled = $false
     Set-PortControlsEnabled $false
     $lblProg.Text = "正在启动..."
     Write-Log ("启动 " + $pb.Port + " -> " + $remote)
