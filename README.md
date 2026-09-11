@@ -25,6 +25,12 @@
 
 桌面也可以放一份副本，和本目录保持同一套文件即可。
 
+### 给 Cursor / Agent 的 Skill
+
+克隆本仓库后，把 `.cursor/skills/gec6818-serial/` 留在仓库里即可。Cursor 会读 `SKILL.md`：提到 GEC6818、下板、串口传输时，Agent 应调用仓库根的 `gec-serial.ps1`，不要自己写 `dd`。
+
+若要在其他工程里用，把整个 `gec6818-serial` 目录拷到那个工程的 `.cursor/skills/` 下，并把脚本路径指回本仓库根。
+
 ---
 
 ## 使用前
