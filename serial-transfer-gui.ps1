@@ -26,63 +26,48 @@ function Test-GecGuiRemotePath([string]$path) {
     return Test-GecRemotePath $path
 }
 
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "GEC6818"
-$form.Size = New-Object System.Drawing.Size(980, 760)
-$form.MinimumSize = New-Object System.Drawing.Size(860, 640)
+$form = New-Object IosChromeForm
+$form.Text = "串口工具"
+$form.Size = New-Object System.Drawing.Size(980, 740)
+$form.MinimumSize = New-Object System.Drawing.Size(860, 620)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = $script:Ui.Bg
 $form.ForeColor = $script:Ui.Text
 $form.Font = $script:FontUi
 $form.AcceptButton = $null
+$form.ShowInTaskbar = $true
+$form.ShowIcon = $false
+$form.MaximizeBox = $true
+$form.MinimizeBox = $true
+$form.ControlBox = $true
+$script:IosMainForm = $form
 
-# --- 导航栏 ---
+$root = New-Object System.Windows.Forms.TableLayoutPanel
+$root.Dock = "Fill"
+$root.ColumnCount = 1
+$root.RowCount = 2
+$root.BackColor = $script:Ui.Bg
+$root.GrowStyle = "FixedSize"
+[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 58)))
+[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+$form.Controls.Add($root)
+
+# --- 工具条 ---
 $nav = New-Object System.Windows.Forms.Panel
-$nav.Dock = "Top"
-$nav.Height = 224
+$nav.Dock = "Fill"
 $nav.BackColor = $script:Ui.Nav
-$form.Controls.Add($nav)
+$root.Controls.Add($nav, 0, 0)
 
-$lblTitle = New-Object System.Windows.Forms.Label
-$lblTitle.Text = "串口工具"
-$lblTitle.Font = $script:FontTitle
-$lblTitle.ForeColor = $script:Ui.Text
-$lblTitle.BackColor = [System.Drawing.Color]::Transparent
-$lblTitle.Location = New-Object System.Drawing.Point(24, 14)
-$lblTitle.Size = New-Object System.Drawing.Size(280, 36)
-$nav.Controls.Add($lblTitle)
-
-$lblSub = New-Object System.Windows.Forms.Label
-$lblSub.Text = "GEC6818  ·  CH340  ·  8N1"
-$lblSub.Font = $script:FontUiSm
-$lblSub.ForeColor = $script:Ui.Muted
-$lblSub.BackColor = [System.Drawing.Color]::Transparent
-$lblSub.Location = New-Object System.Drawing.Point(26, 50)
-$lblSub.Size = New-Object System.Drawing.Size(300, 18)
-$nav.Controls.Add($lblSub)
-
-$lblConn = New-Object System.Windows.Forms.Label
-$lblConn.Text = "空闲"
-$lblConn.TextAlign = "MiddleCenter"
-$lblConn.Font = $script:FontUiBd
-$lblConn.Size = New-Object System.Drawing.Size(168, 32)
-$lblConn.Location = New-Object System.Drawing.Point(760, 22)
-$lblConn.BackColor = $script:Ui.Seg
-$lblConn.ForeColor = $script:Ui.Muted
-$nav.Controls.Add($lblConn)
-
-Add-L $nav "串口" 24 78 40 | Out-Null
-$cmbPort = New-UiCombo $nav
-$cmbPort.Location = New-Object System.Drawing.Point(64, 74)
-$cmbPort.Size = New-Object System.Drawing.Size(150, 30)
+$fldPort = New-Field $nav 16 11 168 36
+$cmbPort = New-UiCombo $fldPort
+$cmbPort.Dock = "Fill"
 $cmbPort.DropDownStyle = "DropDown"
 
-$btnRef = Add-Btn $nav "刷新" 222 72 72 32 $script:Ui.Seg $script:Ui.Text
+$btnRef = Add-Btn $nav "刷新" 192 11 68 36 $script:Ui.Seg $script:Ui.Text
 
-Add-L $nav "波特率" 310 78 50 | Out-Null
-$cmbBaud = New-UiCombo $nav
-$cmbBaud.Location = New-Object System.Drawing.Point(366, 74)
-$cmbBaud.Size = New-Object System.Drawing.Size(120, 30)
+$fldBaud = New-Field $nav 268 11 128 36
+$cmbBaud = New-UiCombo $fldBaud
+$cmbBaud.Dock = "Fill"
 $cmbBaud.DropDownStyle = "DropDownList"
 @(9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600) | ForEach-Object { [void]$cmbBaud.Items.Add("$_") }
 $cmbBaud.SelectedItem = "115200"
@@ -90,50 +75,43 @@ $cmbBaud.SelectedItem = "115200"
 $seg = New-Object IosCard
 $seg.CornerRadius = 12
 $seg.BackColor = $script:Ui.Seg
-$seg.Location = New-Object System.Drawing.Point(24, 116)
-$seg.Size = New-Object System.Drawing.Size(360, 40)
+$seg.LineColor = $script:Ui.Seg
+$seg.Location = New-Object System.Drawing.Point(560, 11)
+$seg.Size = New-Object System.Drawing.Size(400, 36)
 $nav.Controls.Add($seg)
 
-$btnSegXfer = Add-Btn $seg "文件传输" 4 4 172 32 $script:Ui.Seg $script:Ui.Muted
-$btnSegTerm = Add-Btn $seg "串口终端" 184 4 172 32 ([System.Drawing.Color]::White) $script:Ui.Accent
+$btnSegXfer = Add-Btn $seg "文件传输" 3 3 194 30 $script:Ui.Seg $script:Ui.Muted
+$btnSegTerm = Add-Btn $seg "串口终端" 203 3 194 30 ([System.Drawing.Color]::White) $script:Ui.Text
+$btnSegTerm.RainbowBorder = $true
 
-$btnTermConnect = Add-Btn $nav "连接" 24 168 96 40 $script:Ui.Ok ([System.Drawing.Color]::White)
-$btnTermDisconnect = Add-Btn $nav "断开" 128 168 80 40 $script:Ui.Danger ([System.Drawing.Color]::White)
-$btnTermDisconnect.Enabled = $false
-$btnTermClear = Add-Btn $nav "清屏" 216 168 72 40 $script:Ui.Seg $script:Ui.Text
-$btnTermCtrlC = Add-Btn $nav "Ctrl+C" 296 168 80 40 $script:Ui.Seg $script:Ui.Text
-$btnTermCtrlC.Enabled = $false
+$pillConn = New-Object IosCard
+$pillConn.CornerRadius = 12
+$pillConn.BackColor = $script:Ui.Seg
+$pillConn.LineColor = $script:Ui.Seg
+$pillConn.Size = New-Object System.Drawing.Size(132, 36)
+$pillConn.Location = New-Object System.Drawing.Point(820, 11)
+$nav.Controls.Add($pillConn)
+$lblConn = New-Object System.Windows.Forms.Label
+$lblConn.Text = "●  未连接"
+$lblConn.Dock = "Fill"
+$lblConn.TextAlign = "MiddleCenter"
+$lblConn.Font = $script:FontUiSm
+$lblConn.ForeColor = $script:Ui.Muted
+$lblConn.BackColor = [System.Drawing.Color]::Transparent
+$pillConn.Controls.Add($lblConn)
 
-$lblTermStatus = New-Object System.Windows.Forms.Label
-$lblTermStatus.Text = "点绿色「连接」后再输入命令"
-$lblTermStatus.Location = New-Object System.Drawing.Point(388, 176)
-$lblTermStatus.Size = New-Object System.Drawing.Size(360, 24)
-$lblTermStatus.ForeColor = $script:Ui.Muted
-$lblTermStatus.BackColor = [System.Drawing.Color]::Transparent
-$nav.Controls.Add($lblTermStatus)
-
-# --- 底栏 ---
-$foot = New-Object System.Windows.Forms.Panel
-$foot.Dock = "Bottom"
-$foot.Height = 30
-$foot.BackColor = $script:Ui.Nav
-$form.Controls.Add($foot)
-$hint = New-Object System.Windows.Forms.Label
-$hint.Text = "先关掉 MobaXterm 串口标签。点上方「串口终端」进入控制台。"
-$hint.Dock = "Fill"
-$hint.TextAlign = "MiddleLeft"
-$hint.Padding = New-Object System.Windows.Forms.Padding(20, 0, 0, 0)
-$hint.ForeColor = $script:Ui.Muted
-$hint.Font = $script:FontUiSm
-$foot.Controls.Add($hint)
+$navHair = New-Object System.Windows.Forms.Panel
+$navHair.Height = 1
+$navHair.Dock = "Bottom"
+$navHair.BackColor = $script:Ui.Border
+$nav.Controls.Add($navHair)
 
 # --- 页面容器 ---
 $pageHost = New-Object System.Windows.Forms.Panel
 $pageHost.Dock = "Fill"
 $pageHost.BackColor = $script:Ui.Bg
-$pageHost.Padding = New-Object System.Windows.Forms.Padding(16, 12, 16, 10)
-$form.Controls.Add($pageHost)
-$pageHost.SendToBack()
+$pageHost.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 14)
+$root.Controls.Add($pageHost, 0, 1)
 
 $pageXfer = New-Object System.Windows.Forms.Panel
 $pageXfer.Dock = "Fill"
@@ -146,7 +124,28 @@ $pageTerm.Dock = "Fill"
 $pageTerm.BackColor = $script:Ui.Bg
 $pageTerm.Visible = $true
 $pageHost.Controls.Add($pageTerm)
-$tabTerm = $pageTerm
+
+$tabTerm = New-Object System.Windows.Forms.Panel
+$tabTerm.Dock = "Fill"
+$tabTerm.BackColor = $script:Ui.Bg
+$pageTerm.Controls.Add($tabTerm)
+
+$termBar = New-Object System.Windows.Forms.Panel
+$termBar.Dock = "Fill"
+$termBar.BackColor = $script:Ui.Bg
+$btnTermConnect = Add-Btn $termBar "连接" 4 4 88 36 $script:Ui.Ink ([System.Drawing.Color]::White)
+$btnTermDisconnect = Add-Btn $termBar "断开" 100 4 72 36 $script:Ui.Danger ([System.Drawing.Color]::White)
+$btnTermDisconnect.Enabled = $false
+$btnTermClear = Add-Btn $termBar "清屏" 180 4 68 36 $script:Ui.Seg $script:Ui.Text
+$btnTermCtrlC = Add-Btn $termBar "Ctrl+C" 256 4 76 36 $script:Ui.Seg $script:Ui.Text
+$btnTermCtrlC.Enabled = $false
+$lblTermStatus = New-Object System.Windows.Forms.Label
+$lblTermStatus.Text = "先关 MobaXterm 串口标签，再点连接"
+$lblTermStatus.Location = New-Object System.Drawing.Point(348, 12)
+$lblTermStatus.Size = New-Object System.Drawing.Size(420, 22)
+$lblTermStatus.ForeColor = $script:Ui.Muted
+$lblTermStatus.BackColor = [System.Drawing.Color]::Transparent
+$termBar.Controls.Add($lblTermStatus)
 
 $script:CurrentPage = "term"
 
@@ -160,16 +159,20 @@ function Show-GecPage([string]$which) {
     $pageTerm.Visible = ($which -eq "term")
     if ($which -eq "term") {
         $btnSegTerm.BackColor = [System.Drawing.Color]::White
-        $btnSegTerm.ForeColor = $script:Ui.Accent
+        $btnSegTerm.ForeColor = $script:Ui.Text
+        $btnSegTerm.RainbowBorder = $true
         $btnSegXfer.BackColor = $script:Ui.Seg
         $btnSegXfer.ForeColor = $script:Ui.Muted
+        $btnSegXfer.RainbowBorder = $false
         $form.AcceptButton = $null
         if ($script:TermConnected) { $txtTerm.Focus() }
     } else {
         $btnSegXfer.BackColor = [System.Drawing.Color]::White
-        $btnSegXfer.ForeColor = $script:Ui.Accent
+        $btnSegXfer.ForeColor = $script:Ui.Text
+        $btnSegXfer.RainbowBorder = $true
         $btnSegTerm.BackColor = $script:Ui.Seg
         $btnSegTerm.ForeColor = $script:Ui.Muted
+        $btnSegTerm.RainbowBorder = $false
     }
     $btnSegXfer.Invalidate()
     $btnSegTerm.Invalidate()
@@ -197,15 +200,10 @@ $cardFile.Dock = "Top"
 $cardFile.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 10)
 $xferGrid.SetRow($cardFile, 0)
 Add-L $cardFile "电脑上的文件" 16 10 240 | Out-Null
-$txtLocal = New-Object System.Windows.Forms.TextBox
-$txtLocal.Location = New-Object System.Drawing.Point(16, 36)
-$txtLocal.Size = New-Object System.Drawing.Size(680, 28)
-$txtLocal.BorderStyle = "None"
-$txtLocal.BackColor = $script:Ui.Input
-$txtLocal.ForeColor = $script:Ui.Text
-$txtLocal.Font = $script:FontUi
-$cardFile.Controls.Add($txtLocal)
-$btnBrowse = Add-Btn $cardFile "浏览" 708 32 88 36 $script:Ui.Accent ([System.Drawing.Color]::White)
+$fldLocal = New-Field $cardFile 16 34 680 36
+$txtLocal = Add-Box $fldLocal 0 0 100
+$txtLocal.Dock = "Fill"
+$btnBrowse = Add-Btn $cardFile "浏览" 708 34 88 36 $script:Ui.Ink ([System.Drawing.Color]::White)
 
 $shareNqt = "C:\Users\32533\gec6818_share\vehicle_nqt"
 $shareQt = "C:\Users\32533\gec6818_share\vehicle_course"
@@ -218,14 +216,9 @@ $cardDest.Dock = "Top"
 $cardDest.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 10)
 $xferGrid.SetRow($cardDest, 1)
 Add-L $cardDest "板上目标（/home、/tmp 或 /usr/local/bin）" 16 10 420 | Out-Null
-$txtRemote = New-Object System.Windows.Forms.TextBox
-$txtRemote.Location = New-Object System.Drawing.Point(16, 36)
-$txtRemote.Size = New-Object System.Drawing.Size(780, 28)
-$txtRemote.BorderStyle = "None"
-$txtRemote.BackColor = $script:Ui.Input
-$txtRemote.ForeColor = $script:Ui.Text
-$txtRemote.Font = $script:FontUi
-$cardDest.Controls.Add($txtRemote)
+$fldRemote = New-Field $cardDest 16 34 780 36
+$txtRemote = Add-Box $fldRemote 0 0 100
+$txtRemote.Dock = "Fill"
 if (Test-Path $shareNqt) { $txtRemote.Text = "/home/vehicle_nqt" } else { $txtRemote.Text = "/home/vehicle_course" }
 
 $cardAct = New-Card $xferGrid
@@ -252,9 +245,9 @@ $chkRun.BackColor = [System.Drawing.Color]::Transparent
 $chkRun.Font = $script:FontUi
 $cardAct.Controls.Add($chkRun)
 
-$btnStart = Add-Btn $cardAct "开始传输" 16 48 132 38 $script:Ui.Ok ([System.Drawing.Color]::White)
-$btnRun = Add-Btn $cardAct "启动程序" 156 48 124 38 $script:Ui.Accent ([System.Drawing.Color]::White)
-$btnCancel = Add-Btn $cardAct "取消" 288 48 80 38 $script:Ui.Danger ([System.Drawing.Color]::White)
+$btnStart = Add-Btn $cardAct "开始传输" 16 48 132 38 $script:Ui.Ink ([System.Drawing.Color]::White)
+$btnRun = Add-Btn $cardAct "启动程序" 156 48 124 38 $script:Ui.Ink ([System.Drawing.Color]::White)
+$btnCancel = Add-Btn $cardAct "取消" 288 48 80 38 $script:Ui.Seg $script:Ui.Text
 $btnCancel.Enabled = $false
 
 $cardProg = New-Card $xferGrid
@@ -269,16 +262,12 @@ $lblProg.Size = New-Object System.Drawing.Size(760, 20)
 $lblProg.ForeColor = $script:Ui.Text
 $lblProg.BackColor = [System.Drawing.Color]::Transparent
 $cardProg.Controls.Add($lblProg)
-$barPct = New-Object System.Windows.Forms.ProgressBar
-$barPct.Minimum = 0
-$barPct.Maximum = 1000
-$barPct.Value = 0
-$barPct.Location = New-Object System.Drawing.Point(16, 36)
-$barPct.Size = New-Object System.Drawing.Size(760, 14)
-$barPct.Style = "Continuous"
+$barPct = New-Object IosProgress
+$barPct.Progress = 0
+$barPct.FillColor = $script:Ui.Ink
+$barPct.Location = New-Object System.Drawing.Point(16, 38)
+$barPct.Size = New-Object System.Drawing.Size(760, 8)
 $cardProg.Controls.Add($barPct)
-$fillHost = $barPct
-$barFill = New-Object System.Windows.Forms.Panel
 
 $cardLog = New-Card $xferGrid
 $cardLog.Dock = "Fill"
@@ -316,7 +305,7 @@ function Update-Progress([int64]$done, [int64]$total, $t0) {
     $eta = if ($speed -gt 1) { ($total - $done) / $speed } else { 0 }
     $lblProg.Text = ("{0:N0} / {1:N0}    {2:0.0}%    {3:0.0} KB/s    剩余 {4:0} 秒" -f `
         $done, $total, (100.0 * $done / $total), ($speed / 1024.0), $eta)
-    $barPct.Value = [Math]::Min(1000, [Math]::Max(0, $pct))
+    $barPct.Progress = [Math]::Min(1.0, [Math]::Max(0.0, $pct / 1000.0))
 }
 
 function Refresh-Ports {
@@ -347,49 +336,53 @@ function Set-PortControlsEnabled([bool]$enabled) {
 
 function Update-ConnLabel {
     if ($script:TermConnected) {
-        $lblConn.Text = "已连接 " + $script:TermPort.PortName
+        $lblConn.Text = "●  " + $script:TermPort.PortName
         $lblConn.ForeColor = [System.Drawing.Color]::White
-        $lblConn.BackColor = $script:Ui.Ok
+        $pillConn.BackColor = $script:Ui.Ink
+        $pillConn.LineColor = $script:Ui.Ink
     } elseif ($script:Xfer -and -not $script:Xfer.finished) {
-        $lblConn.Text = "传输中"
+        $lblConn.Text = "●  传输中"
         $lblConn.ForeColor = [System.Drawing.Color]::White
-        $lblConn.BackColor = $script:Ui.Accent
+        $pillConn.BackColor = $script:Ui.Ink
+        $pillConn.LineColor = $script:Ui.Ink
     } else {
-        $lblConn.Text = "空闲"
+        $lblConn.Text = "●  未连接"
         $lblConn.ForeColor = $script:Ui.Muted
-        $lblConn.BackColor = $script:Ui.Seg
+        $pillConn.BackColor = $script:Ui.Seg
+        $pillConn.LineColor = $script:Ui.Seg
     }
+    $pillConn.Invalidate()
 }
 
 function Layout-Nav {
     $w = $nav.ClientSize.Width
-    $lblConn.Left = [Math]::Max(480, $w - 196)
-    $seg.Width = [Math]::Min(420, [Math]::Max(320, $w - 48))
-    $half = [int](($seg.Width - 12) / 2)
+    $pillConn.Left = [Math]::Max(420, $w - 148)
+    $seg.Width = [Math]::Min(320, [Math]::Max(220, $w - 568))
+    $seg.Left = [Math]::Max(408, $pillConn.Left - $seg.Width - 12)
+    $half = [int](($seg.Width - 10) / 2)
     $btnSegXfer.Width = $half
-    $btnSegTerm.Left = 6 + $half
+    $btnSegTerm.Left = 4 + $half
     $btnSegTerm.Width = $half
-    $lblTermStatus.Left = 388
-    $lblTermStatus.Width = [Math]::Max(160, $w - 412)
+    $lblTermStatus.Width = [Math]::Max(160, $termBar.ClientSize.Width - 360)
 }
 
 $nav.Add_Resize({ Layout-Nav })
 $form.Add_Shown({
     Layout-Nav
-    $txtLocal.Width = [Math]::Max(200, $cardFile.ClientSize.Width - 124)
-    $btnBrowse.Left = $txtLocal.Left + $txtLocal.Width + 8
-    $txtRemote.Width = [Math]::Max(200, $cardDest.ClientSize.Width - 32)
+    $fldLocal.Width = [Math]::Max(200, $cardFile.ClientSize.Width - 124)
+    $btnBrowse.Left = $fldLocal.Left + $fldLocal.Width + 8
+    $fldRemote.Width = [Math]::Max(200, $cardDest.ClientSize.Width - 32)
     $lblProg.Width = [Math]::Max(200, $cardProg.ClientSize.Width - 32)
     $barPct.Width = $lblProg.Width
     Show-GecPage "term"
 })
 
 $cardFile.Add_Resize({
-    $txtLocal.Width = [Math]::Max(200, $cardFile.ClientSize.Width - 124)
-    $btnBrowse.Left = $txtLocal.Left + $txtLocal.Width + 8
+    $fldLocal.Width = [Math]::Max(200, $cardFile.ClientSize.Width - 124)
+    $btnBrowse.Left = $fldLocal.Left + $fldLocal.Width + 8
 })
 $cardDest.Add_Resize({
-    $txtRemote.Width = [Math]::Max(200, $cardDest.ClientSize.Width - 32)
+    $fldRemote.Width = [Math]::Max(200, $cardDest.ClientSize.Width - 32)
 })
 $cardProg.Add_Resize({
     $lblProg.Width = [Math]::Max(200, $cardProg.ClientSize.Width - 32)
@@ -537,7 +530,7 @@ $btnStart.Add_Click({
     $btnCancel.Enabled = $true
     $btnTermConnect.Enabled = $false
     Set-PortControlsEnabled $false
-    $barPct.Value = 0
+    $barPct.Progress = 0
     $lblProg.Text = "连接中..."
     Write-Log ("开始 " + $pb.Port + " " + $pb.Baud + " -> " + $remote)
     Show-GecPage "xfer"

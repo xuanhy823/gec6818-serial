@@ -26,17 +26,27 @@ $uiSeg = $script:Ui.Seg
 $termGrid = New-Object System.Windows.Forms.TableLayoutPanel
 $termGrid.Dock = "Fill"
 $termGrid.ColumnCount = 1
-$termGrid.RowCount = 2
+$termGrid.RowCount = 3
 $termGrid.BackColor = $uiBg
+$termGrid.GrowStyle = "FixedSize"
+[void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 48)))
 [void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
 [void]$termGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 68)))
 $tabTerm.Controls.Add($termGrid)
 
+$termBar.Parent = $termGrid
+$termBar.Dock = "Fill"
+$termBar.BackColor = $uiBg
+$termGrid.SetRow($termBar, 0)
+
 $termShell = New-Card $termGrid
 $termShell.Dock = "Fill"
-$termShell.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 8)
-$termShell.Padding = New-Object System.Windows.Forms.Padding(10)
-$termGrid.SetRow($termShell, 0)
+$termShell.BackColor = $script:Ui.TermBg
+$termShell.LineColor = $script:Ui.TermBg
+$termShell.CornerRadius = 12
+$termShell.Margin = New-Object System.Windows.Forms.Padding(0, 10, 0, 8)
+$termShell.Padding = New-Object System.Windows.Forms.Padding(12)
+$termGrid.SetRow($termShell, 1)
 
 $termQuick = New-Object System.Windows.Forms.FlowLayoutPanel
 $termQuick.Dock = "Fill"
@@ -44,11 +54,11 @@ $termQuick.BackColor = $uiBg
 $termQuick.WrapContents = $true
 $termQuick.Padding = New-Object System.Windows.Forms.Padding(0, 4, 0, 0)
 $termGrid.Controls.Add($termQuick)
-$termGrid.SetRow($termQuick, 1)
+$termGrid.SetRow($termQuick, 2)
 
 $txtTerm = New-Object System.Windows.Forms.TextBox
 $txtTerm.Multiline = $true
-$txtTerm.ScrollBars = "Both"
+$txtTerm.ScrollBars = "None"
 $txtTerm.WordWrap = $false
 $txtTerm.Dock = "Fill"
 $txtTerm.BackColor = $script:Ui.TermBg
@@ -377,7 +387,7 @@ function Connect-Terminal {
     $btnRun.Enabled = $false
     Set-PortControlsEnabled $false
     $lblTermStatus.Text = ($pb.Port + " 已连接 — 在黑框里直接输入，Enter 执行")
-    $lblTermStatus.ForeColor = [System.Drawing.Color]::FromArgb(61, 220, 151)
+    $lblTermStatus.ForeColor = $script:Ui.Text
     Update-ConnLabel
     $termPollTimer.Start()
     $txtTerm.Focus()
@@ -399,8 +409,8 @@ function Disconnect-Terminal {
         $btnRun.Enabled = $true
         Set-PortControlsEnabled $true
     }
-    $lblTermStatus.Text = "未连接。点黑色窗口输入，和 MobaXterm 一样。"
-    $lblTermStatus.ForeColor = [System.Drawing.Color]::FromArgb(122, 132, 153)
+    $lblTermStatus.Text = "未连接。先关 MobaXterm 串口标签，再点连接。"
+    $lblTermStatus.ForeColor = $script:Ui.Muted
     Update-ConnLabel
 }
 
