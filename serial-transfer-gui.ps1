@@ -27,7 +27,7 @@ function Test-GecGuiRemotePath([string]$path) {
 }
 
 $form = New-Object IosChromeForm
-$form.Text = "串口工具"
+$form.Text = "串口工具  ·  -han"
 $form.Size = New-Object System.Drawing.Size(980, 740)
 $form.MinimumSize = New-Object System.Drawing.Size(860, 620)
 $form.StartPosition = "CenterScreen"
@@ -45,11 +45,12 @@ $script:IosMainForm = $form
 $root = New-Object System.Windows.Forms.TableLayoutPanel
 $root.Dock = "Fill"
 $root.ColumnCount = 1
-$root.RowCount = 2
+$root.RowCount = 3
 $root.BackColor = $script:Ui.Bg
 $root.GrowStyle = "FixedSize"
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 58)))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 24)))
 $form.Controls.Add($root)
 
 # --- 工具条 ---
@@ -138,8 +139,23 @@ $nav.Controls.Add($navHair)
 $pageHost = New-Object System.Windows.Forms.Panel
 $pageHost.Dock = "Fill"
 $pageHost.BackColor = $script:Ui.Bg
-$pageHost.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 14)
+$pageHost.Padding = New-Object System.Windows.Forms.Padding(16, 8, 16, 8)
 $root.Controls.Add($pageHost, 0, 1)
+
+$foot = New-Object System.Windows.Forms.Panel
+$foot.Dock = "Fill"
+$foot.BackColor = $script:Ui.Bg
+$root.Controls.Add($foot, 0, 2)
+$lblAuthor = New-Object System.Windows.Forms.Label
+$lblAuthor.Text = "-han"
+$lblAuthor.Dock = "Fill"
+$lblAuthor.TextAlign = "MiddleRight"
+$lblAuthor.Padding = New-Object System.Windows.Forms.Padding(0, 0, 18, 2)
+$lblAuthor.Font = $script:FontCaption
+$lblAuthor.ForeColor = $script:Ui.Muted
+$lblAuthor.BackColor = [System.Drawing.Color]::Transparent
+$lblAuthor.UseMnemonic = $false
+$foot.Controls.Add($lblAuthor)
 
 $pageXfer = New-Object System.Windows.Forms.Panel
 $pageXfer.Dock = "Fill"
@@ -248,7 +264,7 @@ $cardDest.Height = 88
 $cardDest.Dock = "Top"
 $cardDest.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 10)
 $xferGrid.SetRow($cardDest, 1)
-Add-L $cardDest "板上目标（/home、/tmp 或 /usr/local/bin）" 16 10 420 | Out-Null
+Add-L $cardDest "板上目标（/home、/tmp、/usr/local/bin，可写子目录）" 16 10 520 | Out-Null
 $fldRemote = New-Field $cardDest 16 34 780 36
 $txtRemote = Add-Box $fldRemote 0 0 100
 $txtRemote.Dock = "Fill"
@@ -271,7 +287,8 @@ $cardAct.Controls.Add($chkRun)
 
 $btnStart = Add-Btn $cardAct "开始传输" 16 48 132 38 $script:Ui.Ink ([System.Drawing.Color]::White)
 $btnRun = Add-Btn $cardAct "启动程序" 156 48 124 38 $script:Ui.Ink ([System.Drawing.Color]::White)
-$btnCancel = Add-Btn $cardAct "取消" 288 48 80 38 $script:Ui.Seg $script:Ui.Text
+$btnStop = Add-Btn $cardAct "停止程序" 288 48 110 38 $script:Ui.Danger ([System.Drawing.Color]::White)
+$btnCancel = Add-Btn $cardAct "取消" 406 48 80 38 $script:Ui.Seg $script:Ui.Text
 $btnCancel.Enabled = $false
 
 $cardProg = New-Card $xferGrid
@@ -448,8 +465,11 @@ function Stop-XferUi {
     $btnTermCtrlC.Enabled = [bool]$script:TermConnected
     $btnTermCtrlD.Enabled = [bool]$script:TermConnected
     $btnTermLaunch.Enabled = $true
+    $btnTermStop.Enabled = [bool]$script:TermConnected
+    $btnStop.Enabled = $true
     if ($script:TermConnected) {
         Set-PortControlsEnabled $false
+        try { Restore-TermTty } catch {}
         if ($script:CurrentPage -eq "term") { $termPollTimer.Start() }
     } else {
         Set-PortControlsEnabled $true
@@ -497,7 +517,7 @@ function Drain-XferUi {
                     remote = [string]$st.remote
                     pids   = @($st.launchPids)
                 }
-                $lblTermStatus.Text = ([string]$st.message) + "  ·  Ctrl+C 停止"
+                $lblTermStatus.Text = ([string]$st.message) + "  ·  点「停止」或 Ctrl+C 结束"
                 $lblTermStatus.ForeColor = $script:Ui.Text
             }
         } elseif ($st.error) {
@@ -553,12 +573,12 @@ $btnBrowse.Add_Click({
     $dlg.Filter = "全部|*.*"
     if ($dlg.ShowDialog() -eq "OK") {
         $txtLocal.Text = $dlg.FileName
-        $txtRemote.Text = "/home/" + [IO.Path]::GetFileName($dlg.FileName)
+        $txtRemote.Text = Join-GecRemoteName $txtRemote.Text ([IO.Path]::GetFileName($dlg.FileName))
     }
 })
 $txtLocal.Add_TextChanged({
     $name = [IO.Path]::GetFileName($txtLocal.Text.Trim())
-    if ($name) { $txtRemote.Text = "/home/" + $name }
+    if ($name) { $txtRemote.Text = Join-GecRemoteName $txtRemote.Text $name }
 })
 
 function Ensure-GecConnected {
@@ -581,7 +601,7 @@ $btnStart.Add_Click({
         return
     }
     if (-not (Test-GecGuiRemotePath $remote)) {
-        [System.Windows.Forms.MessageBox]::Show("板上路径只允许 /home/名、/tmp/名 或 /usr/local/bin/名（字母数字._+-）。", "串口传输", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("板上路径只允许 /home、/tmp、/usr/local/bin 下的文件，可带子目录，例如 /home/class/demo。", "串口传输", "OK", "Warning") | Out-Null
         return
     }
     if (-not (Test-Path -LiteralPath $script:CorePath)) {
@@ -594,7 +614,11 @@ $btnStart.Add_Click({
     $btnCancel.Enabled = $true
     $btnTermConnect.Enabled = $false
     $btnTermDisconnect.Enabled = $false
+    $btnTermCtrlC.Enabled = $false
+    $btnTermCtrlD.Enabled = $false
     $btnTermLaunch.Enabled = $false
+    $btnTermStop.Enabled = $false
+    $btnStop.Enabled = $false
     Set-PortControlsEnabled $false
     $barPct.Progress = 0
     $lblProg.Text = "连接中..."
@@ -612,7 +636,7 @@ $btnRun.Add_Click({
         return
     }
     if (-not (Test-GecGuiRemotePath $remote)) {
-        [System.Windows.Forms.MessageBox]::Show("请填写合法板上路径，例如 /home/vehicle_course", "启动", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("请填写合法板上路径，例如 /home/vehicle_course 或 /home/class/demo", "启动", "OK", "Warning") | Out-Null
         return
     }
     if (-not (Ensure-GecConnected)) { return }
@@ -621,7 +645,11 @@ $btnRun.Add_Click({
     $btnCancel.Enabled = $true
     $btnTermConnect.Enabled = $false
     $btnTermDisconnect.Enabled = $false
+    $btnTermCtrlC.Enabled = $false
+    $btnTermCtrlD.Enabled = $false
     $btnTermLaunch.Enabled = $false
+    $btnTermStop.Enabled = $false
+    $btnStop.Enabled = $false
     Set-PortControlsEnabled $false
     $lblProg.Text = "正在启动..."
     Write-Log ("启动 " + $pb.Port + " -> " + $remote)
@@ -637,9 +665,17 @@ $btnCancel.Add_Click({
 })
 
 $form.Add_FormClosing({
-    if ($script:Xfer) { $script:Xfer.cancel = $true }
-    Disconnect-Terminal
+    if ($script:Xfer -and -not $script:Xfer.finished) {
+        $script:Xfer.cancel = $true
+        $n = 0
+        while ($script:Xfer -and -not $script:Xfer.finished -and $n -lt 20) {
+            Start-Sleep -Milliseconds 100
+            $n++
+        }
+    }
     $timer.Stop()
+    if ($termPollTimer) { $termPollTimer.Stop() }
+    Disconnect-Terminal
 })
 
 Refresh-Ports

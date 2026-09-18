@@ -234,7 +234,12 @@ public class IosComboItems {
         if (item == null) return;
         _list.Add(Convert.ToString(item));
     }
-    public void Clear() { _list.Clear(); }
+    IosCombo _combo;
+    public void Attach(IosCombo combo) { _combo = combo; }
+    public void Clear() {
+        _list.Clear();
+        if (_combo != null) _combo.ResetSelection();
+    }
     public bool Contains(object item) {
         return item != null && _list.Contains(Convert.ToString(item));
     }
@@ -286,6 +291,7 @@ public class IosCombo : Control {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         Height = 26;
         Cursor = Cursors.Hand;
+        _items.Attach(this);
         _box.BorderStyle = BorderStyle.None;
         _box.Font = Font;
         _box.ForeColor = ForeColor;
@@ -296,6 +302,7 @@ public class IosCombo : Control {
         ApplyEdit();
         LayoutBox();
     }
+    public void ResetSelection() { _index = -1; }
 
     void ApplyEdit() {
         _box.ReadOnly = !_editable;

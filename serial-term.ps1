@@ -61,11 +61,14 @@ $fldLaunch = New-Field $termLaunch 80 6 420 36
 $txtLaunch = Add-Box $fldLaunch 0 0 100
 $txtLaunch.Dock = "Fill"
 if ($txtRemote -and $txtRemote.Text) { $txtLaunch.Text = $txtRemote.Text } else { $txtLaunch.Text = "/home/" }
-$btnTermLaunch = Add-Btn $termLaunch "启动" 508 6 88 36 $script:Ui.Ink ([System.Drawing.Color]::White)
+$btnTermLaunch = Add-Btn $termLaunch "启动" 508 6 72 36 $script:Ui.Ink ([System.Drawing.Color]::White)
+$btnTermStop = Add-Btn $termLaunch "停止" 588 6 72 36 $script:Ui.Danger ([System.Drawing.Color]::White)
+$btnTermStop.Enabled = $false
 $termLaunch.Add_Resize({
     $w = $termLaunch.ClientSize.Width
-    $fldLaunch.Width = [Math]::Max(160, $w - 180)
+    $fldLaunch.Width = [Math]::Max(160, $w - 264)
     $btnTermLaunch.Left = $fldLaunch.Left + $fldLaunch.Width + 8
+    $btnTermStop.Left = $btnTermLaunch.Left + $btnTermLaunch.Width + 8
 })
 
 $termShell = New-Card $termGrid
@@ -484,7 +487,7 @@ function Connect-Terminal {
     $ok = Restore-GecShell $script:TermPort $script:TermState
     if (-not $ok) {
         [System.Windows.Forms.MessageBox]::Show("板子无回音。请按复位键，并确认 UART0 接线。", "串口", "OK", "Warning") | Out-Null
-        try { $script:TermPort.Close() } catch {}
+        try { Close-GecSerialPort $script:TermPort } catch { try { $script:TermPort.Close() } catch {} }
         $script:TermPort = $null
         $lblTermStatus.Text = "连接失败。"
         return
@@ -506,6 +509,8 @@ function Connect-Terminal {
     $btnTermDisconnect.Enabled = $true
     $btnTermCtrlC.Enabled = $true
     $btnTermCtrlD.Enabled = $true
+    $btnTermStop.Enabled = $true
+    if ($btnStop) { $btnStop.Enabled = $true }
     Set-PortControlsEnabled $false
     $lblTermStatus.Text = ($pb.Port + " 已连接 — 和 MobaXterm 一样在黑框里输入，Enter 执行")
     $lblTermStatus.ForeColor = $script:Ui.Text
@@ -518,6 +523,9 @@ function Connect-Terminal {
 
 function Disconnect-Terminal {
     $termPollTimer.Stop()
+    if ($script:TermPort -and $script:TermPort.IsOpen) {
+        try { $null = Stop-BoardApp -LeavePollStopped } catch {}
+    }
     if ($script:TermPort) {
         if (Get-Command Close-GecSerialPort -ErrorAction SilentlyContinue) {
             Close-GecSerialPort $script:TermPort
@@ -533,6 +541,8 @@ function Disconnect-Terminal {
     $btnTermDisconnect.Enabled = $false
     $btnTermCtrlC.Enabled = $false
     $btnTermCtrlD.Enabled = $false
+    $btnTermStop.Enabled = $false
+    if ($btnStop) { $btnStop.Enabled = $true }
     if (-not ($script:Xfer -and -not $script:Xfer.finished)) {
         $btnStart.Enabled = $true
         $btnRun.Enabled = $true
@@ -551,33 +561,105 @@ function Show-TermNote([string]$text) {
 }
 
 function Stop-LastLaunchApp {
-    if (-not $script:LastLaunch -or -not $script:TermPort -or -not $script:TermPort.IsOpen) { return $false }
-    $base = [string]$script:LastLaunch.base
-    if ($base -notmatch '^[A-Za-z0-9._+-]+$') { return $false }
-    $pids = @($script:LastLaunch.pids | Where-Object { $_ -match '^\d+$' })
-    $kill = ""
-    if ($pids.Count -gt 0) { $kill = "kill " + ($pids -join " ") + " 2>/dev/null; " }
-    $kill += "killall " + $base + " 2>/dev/null; echo KILL_DONE"
+    param([switch]$LeavePollStopped)
+    return Stop-BoardApp -LeavePollStopped:$LeavePollStopped
+}
+
+function Stop-BoardApp {
+    param(
+        [switch]$LeavePollStopped,
+        [switch]$UseLaunchBox
+    )
+    if (-not $script:TermPort -or -not $script:TermPort.IsOpen) { return $false }
+    $names = New-Object System.Collections.Generic.List[string]
+    $pids = @()
+    if ($script:LastLaunch) {
+        $b = [string]$script:LastLaunch.base
+        if ($b -match '^[A-Za-z0-9._+-]+$') { [void]$names.Add($b) }
+        $pids = @($script:LastLaunch.pids | Where-Object { "$_" -match '^\d+$' })
+        if ((Get-Command Test-GecVehicleName -ErrorAction SilentlyContinue) -and (Test-GecVehicleName $b)) {
+            foreach ($x in @("vehicle_course", "vehicle_nqt", "start_vehicle")) {
+                if (-not $names.Contains($x)) { [void]$names.Add($x) }
+            }
+        }
+    }
+    if ($UseLaunchBox) {
+        $hint = ""
+        if ($txtLaunch -and $txtLaunch.Text) { $hint = $txtLaunch.Text.Trim() }
+        if (-not $hint -and $txtRemote -and $txtRemote.Text) { $hint = $txtRemote.Text.Trim() }
+        if ($hint) {
+            $leaf = Split-Path -Leaf ($hint.Replace('\', '/'))
+            if ($leaf -match '^[A-Za-z0-9._+-]+$' -and -not $names.Contains($leaf)) { [void]$names.Add($leaf) }
+            if ((Get-Command Test-GecVehicleName -ErrorAction SilentlyContinue) -and (Test-GecVehicleName $leaf)) {
+                foreach ($x in @("vehicle_course", "vehicle_nqt", "start_vehicle")) {
+                    if (-not $names.Contains($x)) { [void]$names.Add($x) }
+                }
+            }
+        }
+    }
+    if ($names.Count -eq 0 -and $pids.Count -eq 0) { return $false }
     $termPollTimer.Stop()
     try {
-        $null = Send-GecCmd $script:TermPort $kill 700 "KILL_DONE"
+        try { Send-TermBytes ([byte[]]@(3)) } catch {}
+        Start-Sleep -Milliseconds 80
+        $kill = Get-GecKillCmd -Names @($names) -Pids $pids -BlankFb
+        $out = Send-GecCmd $script:TermPort $kill 2200 "KILL_DONE"
+        if ($out -notmatch "KILL_DONE") {
+            $st = $script:TermState
+            if (-not $st) {
+                $st = @{ logs = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList)) }
+            }
+            $null = Restore-GecShell $script:TermPort $st
+            $out = Send-GecCmd $script:TermPort $kill 2200 "KILL_DONE"
+        }
     } catch {
     } finally {
-        if ($script:TermConnected) { $termPollTimer.Start() }
+        if ($script:TermConnected -and -not $LeavePollStopped) { $termPollTimer.Start() }
     }
     $script:LastLaunch = $null
     return $true
 }
 
-function Send-TermCtrlC {
-    if (-not $script:TermConnected -or -not $script:TermPort) { return }
-    $hadApp = [bool]$script:LastLaunch
+function Invoke-StopBoardAppClick {
+    if ($script:Xfer -and -not $script:Xfer.finished) {
+        [System.Windows.Forms.MessageBox]::Show("传输进行中，请等待完成或取消后再停止。", "停止程序", "OK", "Warning") | Out-Null
+        return
+    }
+    if (-not $script:TermConnected) {
+        Connect-Terminal
+        if (-not $script:TermConnected) { return }
+    }
     $base = ""
-    if ($hadApp) { $base = [string]$script:LastLaunch.base }
+    if ($script:LastLaunch) { $base = [string]$script:LastLaunch.base }
+    if (Stop-BoardApp -UseLaunchBox) {
+        $note = "已停止板上程序"
+        if ($base) { $note = "已停止 " + $base }
+        $lblTermStatus.Text = $note
+        $lblTermStatus.ForeColor = $uiText
+        Show-TermNote $note
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log $note }
+    } else {
+        $lblTermStatus.Text = "没有要停的程序。先启动，或在路径里填板上文件名。"
+        $lblTermStatus.ForeColor = $uiMuted
+    }
+}
+
+function Restore-TermTty {
+    if (-not $script:TermConnected -or -not $script:TermPort -or -not $script:TermPort.IsOpen) { return }
+    Get-TermSize
+    $null = Send-GecCmd $script:TermPort ("stty cols " + $script:TermCols + " rows " + $script:TermRows + " icanon echo isig icrnl -ixon erase ^H") 500
+}
+
+function Send-TermCtrlC {
+    param([switch]$StopApp)
+    if (-not $script:TermConnected -or -not $script:TermPort) { return }
+    $base = ""
+    if ($script:LastLaunch) { $base = [string]$script:LastLaunch.base }
+    $hadApp = [bool]$script:LastLaunch
     Send-TermBytes ([byte[]]@(3))
     if ($hadApp) {
         Start-Sleep -Milliseconds 60
-        if (Stop-LastLaunchApp) {
+        if (Stop-BoardApp) {
             $note = "已停止 " + $base
             $lblTermStatus.Text = $note
             $lblTermStatus.ForeColor = $uiText
@@ -708,7 +790,7 @@ function Start-TermQuickLaunch {
         return
     }
     if (-not (Test-GecRemotePath $path)) {
-        [System.Windows.Forms.MessageBox]::Show("路径只允许 /home/名、/tmp/名 或 /usr/local/bin/名。", "快捷启动", "OK", "Warning") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("路径只允许 /home、/tmp、/usr/local/bin 下的文件，可带子目录。", "快捷启动", "OK", "Warning") | Out-Null
         $txtLaunch.Focus()
         return
     }
@@ -742,7 +824,7 @@ function Start-TermQuickLaunch {
         }
         $msg = [string]$script:TermState.message
         if (-not $msg) { $msg = "已启动 " + $base }
-        $lblTermStatus.Text = $msg + "  ·  Ctrl+C 停止"
+        $lblTermStatus.Text = $msg + "  ·  点「停止」或 Ctrl+C 结束"
         $lblTermStatus.ForeColor = $uiText
         if (Get-Command Write-Log -ErrorAction SilentlyContinue) { Write-Log $msg }
         Show-TermNote $msg
@@ -762,9 +844,11 @@ function Start-TermQuickLaunch {
 $btnTermConnect.Add_Click({ Connect-Terminal })
 $btnTermDisconnect.Add_Click({ Disconnect-Terminal })
 $btnTermClear.Add_Click({ Reset-TerminalEmulator; if ($script:TermConnected) { $txtTerm.Focus() } })
-$btnTermCtrlC.Add_Click({ Send-TermCtrlC; $txtTerm.Focus() })
+$btnTermCtrlC.Add_Click({ Send-TermCtrlC -StopApp; $txtTerm.Focus() })
 $btnTermCtrlD.Add_Click({ Send-TermCtrlD; $txtTerm.Focus() })
 $btnTermLaunch.Add_Click({ Start-TermQuickLaunch })
+$btnTermStop.Add_Click({ Invoke-StopBoardAppClick })
+if ($btnStop) { $btnStop.Add_Click({ Invoke-StopBoardAppClick }) }
 $txtLaunch.Add_KeyDown({
     if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter -or $_.KeyCode -eq [System.Windows.Forms.Keys]::Return) {
         $_.SuppressKeyPress = $true
